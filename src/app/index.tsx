@@ -24,8 +24,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
+import GuideTour, { TOUR_STEPS } from "../components/GuideTour";
 
-type Page = "dashboard" | "products" | "sales" | "expenses" | "debts";
+type Page = "dashboard" | "products" | "sales" | "expenses" | "debts" | "guide";
 type Method = "tunai" | "qris" | "transfer" | "kasbon";
 type PayVia = Exclude<Method, "kasbon">;
 type Period = "today" | "7days" | "30days";
@@ -61,19 +62,19 @@ type Expense = {
 };
 
 const C = {
-  bg: "#F3F6F2",
+  bg: "#F2F2F7",
   card: "#FFFFFF",
-  ink: "#12301F",
-  muted: "#6B7A70",
-  neutral: "#8B948E",
-  line: "#E3EAE4",
+  ink: "#1C1C1E",
+  muted: "#6C6C70",
+  neutral: "#8E8E93",
+  line: "#E5E5EA",
   green: "#1E6844",
   greenDark: "#134A2F",
-  mint: "#DFF0E5",
-  gold: "#F2B84B",
-  goldSoft: "#FFF4DC",
-  red: "#C0463B",
-  redSoft: "#FBE9E6",
+  mint: "#E3F1E8",
+  gold: "#FF9F0A",
+  goldSoft: "#FFF3E0",
+  red: "#E0352B",
+  redSoft: "#FDECEA",
 };
 
 const PERIODS: { label: string; value: Period; long: string }[] = [
@@ -129,6 +130,68 @@ const METHOD_LABEL: Record<string, string> = {
   kasbon: "Kasbon",
 };
 
+const GUIDE: { title: string; lines: string[] }[] = [
+  {
+    title: "Mulai dalam 3 langkah",
+    lines: [
+      "1. Buka tab Produk, lalu tambahkan produkmu lengkap dengan harga jual dan HPP.",
+      "2. Buka tab Jual, pilih produk, isi jumlah, lalu simpan penjualan.",
+      "3. Lihat hasilnya di tab Ringkasan: omzet, laba, dan insight bisnis.",
+    ],
+  },
+  {
+    title: "Produk, HPP, dan stok",
+    lines: [
+      "HPP adalah biaya langsung untuk membuat satu unit produk, misalnya bahan baku dan kemasan.",
+      "Stok bersifat opsional. Kosongkan kolom stok kalau produk tidak perlu dilacak.",
+      "Kalau stok diisi, jumlahnya berkurang otomatis setiap ada penjualan. Tekan Restok untuk menambah stok masuk.",
+      "Produk yang stoknya menipis atau habis muncul sebagai peringatan di Ringkasan.",
+      "Mengubah harga atau menghapus produk tidak mengubah riwayat penjualan yang sudah tercatat.",
+    ],
+  },
+  {
+    title: "Mencatat penjualan",
+    lines: [
+      "Pilih produk, atur jumlah dengan tombol − dan + atau pintasan +5, +10, +20, lalu pilih metode pembayaran.",
+      "Salah input? Tekan Batalkan pada daftar Penjualan terbaru di Ringkasan. Stok produk ikut dikembalikan.",
+    ],
+  },
+  {
+    title: "Metode pembayaran dan kasbon",
+    lines: [
+      "Tunai, QRIS, dan Transfer berarti uang langsung diterima.",
+      "Kasbon berarti pelanggan belum membayar. Nama pelanggan wajib diisi, dan tagihannya muncul di tab Kasbon.",
+      "Di tab Kasbon, tekan Terima pembayaran saat pelanggan membayar. Boleh dicicil, dan pembayaran dilunasi dari tagihan terlama.",
+      "Kartu Uang masuk di Ringkasan membantu mencocokkan uang di laci dengan mutasi rekening atau QRIS.",
+    ],
+  },
+  {
+    title: "Mencatat pengeluaran",
+    lines: [
+      "Buka tab Biaya, pilih kategori, isi nominal, lalu simpan. Contohnya sewa, gaji, listrik, atau transport.",
+      "Pengeluaran mengurangi laba bersih, jadi catat secara rutin agar angkanya akurat.",
+    ],
+  },
+  {
+    title: "Membaca ringkasan",
+    lines: [
+      "Omzet adalah total penjualan. Laba kotor adalah omzet dikurangi HPP. Laba bersih adalah laba kotor dikurangi pengeluaran.",
+      "Ganti periode Hari ini, 7 hari, atau 30 hari di bagian atas Ringkasan.",
+      "Atur target laba bulanan untuk memantau progres dan titik impas.",
+      "Kasbon dihitung sebagai omzet saat dicatat, tetapi baru dihitung sebagai uang masuk setelah dibayar.",
+      "Insight bisnis muncul otomatis setelah ada cukup data penjualan.",
+    ],
+  },
+  {
+    title: "Tips dan penting diketahui",
+    lines: [
+      "Catat transaksi setiap hari. Di akhir hari, cocokkan Uang masuk dengan uang di laci.",
+      "Data tersimpan hanya di HP ini dan belum ada fitur backup. Jangan menghapus aplikasi atau data aplikasi.",
+      "Tombol Bagikan laporan di Ringkasan mengirim rekap singkat lewat WhatsApp atau aplikasi lain.",
+    ],
+  },
+];
+
 const rupiah = (v: number) =>
   `${v < 0 ? "-" : ""}Rp${Math.abs(Math.round(v)).toLocaleString("id-ID")}`;
 
@@ -154,13 +217,21 @@ const dateKey = (date: Date) => {
 const isPositiveInteger = (v: string) =>
   /^\d+$/.test(v) && Number.isSafeInteger(Number(v)) && Number(v) > 0;
 
-const greeting = () => {
-  const h = new Date().getHours();
-  if (h < 11) return "Selamat pagi";
-  if (h < 15) return "Selamat siang";
-  if (h < 18) return "Selamat sore";
-  return "Selamat malam";
+const PAGE_TITLE: Record<Page, string> = {
+  dashboard: "Ringkasan",
+  products: "Produk",
+  sales: "Penjualan",
+  debts: "Kasbon",
+  expenses: "Biaya",
+  guide: "Panduan",
 };
+
+const todayLabel = () =>
+  new Date().toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
 const friendlyTime = (iso: string) => {
   const d = new Date(iso);
@@ -216,6 +287,11 @@ export default function HomeScreen() {
   const [payVia, setPayVia] = useState<PayVia>("tunai");
   const [savingPay, setSavingPay] = useState(false);
 
+  const [guideSeen, setGuideSeen] = useState(true);
+  const [openGuide, setOpenGuide] = useState<number | null>(0);
+  const [tourStep, setTourStep] = useState<number | null>(null);
+  const [tabBarH, setTabBarH] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [savingProduct, setSavingProduct] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
@@ -258,6 +334,11 @@ export default function HomeScreen() {
       "SELECT value FROM settings WHERE key = 'monthly_target'",
     );
     setTarget(targetRow ? Number(targetRow.value) || 0 : 0);
+
+    const guideRow = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM settings WHERE key = 'guide_seen'",
+    );
+    setGuideSeen(guideRow !== null);
   }, [db]);
 
   useEffect(() => {
@@ -945,6 +1026,46 @@ export default function HomeScreen() {
     );
   }
 
+  /* ---------- Panduan ---------- */
+
+  function startTour() {
+    setTourStep(0);
+    setPage(TOUR_STEPS[0].page);
+  }
+
+  function gotoTour(n: number) {
+    if (n < 0) return;
+    if (n >= TOUR_STEPS.length) {
+      closeTour();
+      return;
+    }
+    setTourStep(n);
+    setPage(TOUR_STEPS[n].page);
+  }
+
+  function closeTour() {
+    setTourStep(null);
+    setPage("dashboard");
+  }
+
+  function openFullGuide() {
+    setTourStep(null);
+    setOpenGuide(0);
+    setPage("guide");
+  }
+
+  async function dismissGuide(openIt: boolean) {
+    setGuideSeen(true);
+    if (openIt) startTour();
+    try {
+      await db.runAsync(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('guide_seen', '1')",
+      );
+    } catch (error) {
+      console.error("Gagal menyimpan status panduan:", error);
+    }
+  }
+
   /* ---------- Restok ---------- */
 
   async function saveRestock(product: Product) {
@@ -1171,82 +1292,114 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <View style={styles.flex1}>
-              <Text style={styles.greeting}>{greeting()}</Text>
-              <Text style={styles.title}>Usahain.aja</Text>
+            <View style={styles.headerTop}>
+              <Text style={styles.greeting}>
+                {page === "dashboard" ? todayLabel() : "Usahain.aja"}
+              </Text>
+              {page !== "guide" && tourStep === null && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Buka panduan penggunaan"
+                  hitSlop={10}
+                  style={({ pressed }) => [styles.guideBtn, pressed && styles.pressed]}
+                  onPress={startTour}
+                >
+                  <Text style={styles.guideBtnText}>Panduan</Text>
+                </Pressable>
+              )}
             </View>
+            <Text style={styles.title}>{PAGE_TITLE[page]}</Text>
           </View>
 
           {/* ================= DASHBOARD ================= */}
           {page === "dashboard" && (
             <>
+              {!guideSeen && (
+                <View style={[styles.alertCard, { marginTop: 0, marginBottom: 14 }]}>
+                  <Text style={styles.itemTitle}>Baru memakai Usahain.aja?</Text>
+                  <Text style={styles.muted}>
+                    Ikuti tur singkat (kurang dari satu menit) untuk mengenal aplikasinya.
+                  </Text>
+                  <View style={[styles.productActions, { marginTop: 14 }]}>
+                    <Pressable style={styles.editBtn} onPress={() => dismissGuide(true)}>
+                      <Text style={styles.editBtnText}>Mulai tur</Text>
+                    </Pressable>
+                    <Pressable style={styles.laterBtn} onPress={() => dismissGuide(false)}>
+                      <Text style={styles.laterText}>Nanti saja</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
               {renderPeriodSelector()}
 
-              <View style={styles.hero}>
-                <View style={styles.heroTop}>
-                  <Text style={styles.lightLabel}>Omzet {periodLabel}</Text>
-                  {revenue > 0 && (
-                    <View style={styles.marginPill}>
-                      <Text style={styles.marginPillText}>
-                        Margin bersih {margin}%
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.heroValue}>{rupiah(revenue)}</Text>
-                <Text style={styles.heroHint}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>Omzet {periodLabel}</Text>
+                <Text
+                  style={styles.summaryValue}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {rupiah(revenue)}
+                </Text>
+                <Text style={styles.summarySub}>
                   {filteredSales.length === 0
                     ? "Belum ada transaksi"
-                    : `${filteredSales.length} transaksi tercatat`}
+                    : `${filteredSales.length} transaksi${
+                        revenue > 0 ? `, margin bersih ${margin}%` : ""
+                      }`}
                 </Text>
+
+                <View style={styles.metricRow}>
+                  <View style={styles.metric}>
+                    <Text style={styles.metricLabel}>Laba kotor</Text>
+                    <Text
+                      style={styles.metricValue}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      {rupiah(grossProfit)}
+                    </Text>
+                  </View>
+                  <View style={styles.metricDivider} />
+                  <View style={styles.metric}>
+                    <Text style={styles.metricLabel}>Pengeluaran</Text>
+                    <Text
+                      style={styles.metricValue}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      {rupiah(expenseTotal)}
+                    </Text>
+                  </View>
+                  <View style={styles.metricDivider} />
+                  <View style={styles.metric}>
+                    <Text style={styles.metricLabel}>Laba bersih</Text>
+                    <Text
+                      style={[styles.metricValue, netProfit < 0 && { color: C.red }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      {rupiah(netProfit)}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.statsRow}>
-                <View style={styles.statCard}>
-                  <Text style={styles.label}>Laba kotor</Text>
-                  <Text style={styles.statValue}>{rupiah(grossProfit)}</Text>
+              {bestSeller && (
+                <View style={[styles.listCard, { marginTop: 12 }]}>
+                  <View style={styles.kvRow}>
+                    <Text style={styles.kvLabel}>Produk terlaris</Text>
+                    <Text style={styles.kvValue} numberOfLines={1}>
+                      {bestSeller.name}, {bestSeller.qty} terjual
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.statCard}>
-                  <Text style={styles.label}>Pengeluaran</Text>
-                  <Text style={styles.statValue}>{rupiah(expenseTotal)}</Text>
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.netCard,
-                  netProfit < 0 && { backgroundColor: C.redSoft },
-                ]}
-              >
-                <View style={styles.flex1}>
-                  <Text style={styles.label}>Laba bersih</Text>
-                  <Text
-                    style={[
-                      styles.netValue,
-                      netProfit < 0 && { color: C.red },
-                    ]}
-                  >
-                    {rupiah(netProfit)}
-                  </Text>
-                  <Text style={styles.statSub}>
-                    {netProfit < 0
-                      ? "Pengeluaran lebih besar dari laba kotor"
-                      : "Laba kotor dikurangi pengeluaran"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.statsRow}>
-                <View style={styles.statCard}>
-                  <Text style={styles.label}>Terlaris</Text>
-                  <Text style={styles.statValue} numberOfLines={1}>
-                    {bestSeller ? bestSeller.name : "-"}
-                  </Text>
-                  {bestSeller && (
-                    <Text style={styles.statSub}>{bestSeller.qty} terjual</Text>
-                  )}
-                </View>
-              </View>
+              )}
 
               <View style={styles.actionsRow}>
                 <Pressable
@@ -1808,7 +1961,6 @@ export default function HomeScreen() {
           {/* ================= PENJUALAN ================= */}
           {page === "sales" && (
             <>
-              <Text style={styles.sectionTitle}>Catat penjualan</Text>
               <Text style={styles.subtitle}>
                 Pilih produk yang terjual. Harga dan HPP disimpan sesuai nilai
                 saat transaksi dicatat.
@@ -2008,10 +2160,56 @@ export default function HomeScreen() {
             </>
           )}
 
+          {/* ================= PANDUAN ================= */}
+          {page === "guide" && (
+            <>
+              <Pressable hitSlop={8} onPress={() => setPage("dashboard")}>
+                <Text style={styles.link}>Kembali ke Ringkasan</Text>
+              </Pressable>
+              <Text style={styles.subtitle}>
+                Ketuk judul untuk membuka atau menutup penjelasan.
+              </Text>
+
+              <View style={[styles.listCard, { marginTop: 14 }]}>
+                {GUIDE.map((g, i) => {
+                  const open = openGuide === i;
+                  return (
+                    <View
+                      key={g.title}
+                      style={i < GUIDE.length - 1 ? styles.rowDivider : undefined}
+                    >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: open }}
+                        style={styles.guideHead}
+                        onPress={() => setOpenGuide(open ? null : i)}
+                      >
+                        <Text style={styles.guideTitle}>{g.title}</Text>
+                        <Ionicons
+                          name={open ? "chevron-up" : "chevron-down"}
+                          size={20}
+                          color={C.neutral}
+                        />
+                      </Pressable>
+                      {open && (
+                        <View style={styles.guideBody}>
+                          {g.lines.map((line) => (
+                            <Text key={line} style={styles.guideLine}>
+                              {/^\d+\./.test(line) ? line : `• ${line}`}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
           {/* ================= KASBON ================= */}
           {page === "debts" && (
             <>
-              <Text style={styles.sectionTitle}>Kasbon pelanggan</Text>
               <Text style={styles.subtitle}>
                 Catat penjualan dengan metode Kasbon di tab Jual, lalu terima
                 pembayarannya di sini sampai lunas.
@@ -2119,7 +2317,6 @@ export default function HomeScreen() {
           {/* ================= PENGELUARAN ================= */}
           {page === "expenses" && (
             <>
-              <Text style={styles.sectionTitle}>Catat pengeluaran</Text>
               <Text style={styles.subtitle}>
                 Catat biaya operasional seperti sewa, gaji, atau listrik agar
                 laba bersihmu akurat.
@@ -2258,7 +2455,10 @@ export default function HomeScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.tabBar}>
+        <View
+          style={styles.tabBar}
+          onLayout={(e) => setTabBarH(e.nativeEvent.layout.height)}
+        >
           {tabs.map((t) => {
             const on = page === t.key;
             return (
@@ -2269,11 +2469,10 @@ export default function HomeScreen() {
                 onPress={() => (t.key === "sales" ? startSale() : setPage(t.key))}
                 style={styles.tab}
               >
-                <View style={[styles.tabDot, on && styles.tabDotOn]} />
                 <Ionicons
                   name={on ? t.iconOn : t.icon}
-                  size={24}
-                  color={on ? C.ink : C.neutral}
+                  size={26}
+                  color={on ? C.green : C.neutral}
                 />
                 <Text style={[styles.tabLabel, on && styles.tabLabelOn]}>
                   {t.label}
@@ -2302,37 +2501,60 @@ export default function HomeScreen() {
         >
           <Text style={styles.toastText}>{toast}</Text>
         </Animated.View>
+
+        {tourStep !== null && tabBarH > 0 && (
+          <GuideTour
+            step={tourStep}
+            tabCount={tabs.length}
+            tabBarHeight={tabBarH}
+            onNext={() => gotoTour(tourStep + 1)}
+            onBack={() => gotoTour(tourStep - 1)}
+            onClose={closeTour}
+            onOpenFullGuide={openFullGuide}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const shadow = {
-  borderWidth: 1,
-  borderColor: C.line,
-} as const;
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   flex1: { flex: 1 },
   center: { alignItems: "center", justifyContent: "center", gap: 12 },
-  container: { padding: 20, paddingBottom: 24 },
+  container: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28 },
 
-  header: {
+  /* Header: judul besar ala iOS */
+  header: { marginTop: 6, marginBottom: 18 },
+  headerTop: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
-    marginBottom: 16,
+    justifyContent: "space-between",
   },
-  greeting: { fontSize: 14, color: C.muted },
-  title: { fontSize: 28, fontWeight: "800", color: C.ink, marginTop: 2 },
-  subtitle: { fontSize: 14, color: C.muted, lineHeight: 21, marginTop: 4 },
-
-  sectionTitle: {
-    fontSize: 18,
+  greeting: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: C.neutral,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  title: {
+    fontSize: 34,
     fontWeight: "800",
     color: C.ink,
-    marginTop: 24,
+    letterSpacing: -0.7,
+    marginTop: 4,
+  },
+  subtitle: { fontSize: 15, color: C.muted, lineHeight: 21, marginTop: 2 },
+  guideBtn: { paddingVertical: 2, paddingLeft: 12 },
+  guideBtnText: { color: C.green, fontSize: 16, fontWeight: "500" },
+
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.3,
+    marginTop: 28,
     marginBottom: 12,
   },
   noMargin: { marginTop: 0, marginBottom: 0 },
@@ -2340,126 +2562,228 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 24,
+    marginTop: 28,
     marginBottom: 12,
   },
-  link: { color: C.green, fontSize: 13, fontWeight: "700" },
+  link: { color: C.green, fontSize: 15, fontWeight: "500" },
+  pressed: { opacity: 0.6 },
 
+  /* Segmented control */
   periodRow: {
     flexDirection: "row",
-    backgroundColor: "#E4EBE5",
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
+    backgroundColor: "#E5E5EA",
+    borderRadius: 10,
+    padding: 2,
   },
   periodButton: {
     flex: 1,
     alignItems: "center",
-    paddingVertical: 10,
-    borderRadius: 11,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  periodActive: { backgroundColor: C.card, ...shadow },
-  periodText: { color: C.muted, fontSize: 13, fontWeight: "600" },
-  periodTextActive: { color: C.green, fontWeight: "700" },
+  periodActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  periodText: { color: C.ink, fontSize: 13, fontWeight: "500" },
+  periodTextActive: { fontWeight: "700" },
 
-  hero: {
-    backgroundColor: C.green,
-    borderRadius: 24,
-    padding: 22,
-    marginTop: 14,
-  },
-  heroTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  lightLabel: { fontSize: 13, color: "#CFE5D7" },
-  marginPill: {
-    backgroundColor: C.gold,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  marginPillText: { fontSize: 12, fontWeight: "800", color: "#4A3200" },
-  heroValue: { fontSize: 34, color: "#fff", fontWeight: "800", marginTop: 10 },
-  heroHint: { fontSize: 13, color: "#CFE5D7", marginTop: 6 },
-
-  statsRow: { flexDirection: "row", gap: 12, marginTop: 12 },
-  statCard: {
-    flex: 1,
+  /* Kartu ringkasan */
+  summaryCard: {
     backgroundColor: C.card,
-    borderRadius: 18,
-    padding: 15,
-    ...shadow,
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 16,
   },
-  statValue: { fontSize: 17, fontWeight: "800", color: C.ink },
-  statSub: { fontSize: 12, color: C.muted, marginTop: 3 },
+  summaryLabel: { fontSize: 13, color: C.muted, fontWeight: "500" },
+  summaryValue: {
+    fontSize: 40,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -1,
+    marginTop: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  summarySub: { fontSize: 13, color: C.muted, marginTop: 4 },
+  metricRow: {
+    flexDirection: "row",
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
+  metric: { flex: 1 },
+  metricDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: C.line,
+    marginHorizontal: 12,
+  },
+  metricLabel: { fontSize: 12, color: C.muted, fontWeight: "500" },
+  metricValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.ink,
+    marginTop: 4,
+    fontVariant: ["tabular-nums"],
+  },
+  kvRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    gap: 12,
+  },
+  kvLabel: { fontSize: 15, color: C.ink },
+  kvValue: { flex: 1, textAlign: "right", fontSize: 15, color: C.muted },
 
+  statSub: { fontSize: 12, color: C.muted, marginTop: 3 },
+  statValue: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: C.ink,
+    fontVariant: ["tabular-nums"],
+  },
   netCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.mint,
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 18,
     marginTop: 12,
   },
-  netValue: { fontSize: 24, fontWeight: "800", color: C.greenDark },
+  netValue: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.5,
+    fontVariant: ["tabular-nums"],
+  },
 
+  /* Tombol aksi */
   actionsRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   actionBtn: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 50,
     paddingHorizontal: 12,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  actionDark: { backgroundColor: C.ink },
-  actionDarkText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  actionOutline: {
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.ink,
-  },
-  actionOutlineText: { color: C.ink, fontWeight: "700", fontSize: 14 },
-  pressed: { opacity: 0.8 },
+  actionDark: { backgroundColor: C.green },
+  actionDarkText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  actionOutline: { backgroundColor: C.mint },
+  actionOutlineText: { color: C.greenDark, fontWeight: "600", fontSize: 15 },
 
+  /* Target & insight */
   targetTop: {
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
     marginBottom: 10,
   },
-  fillGreen: { height: 8, borderRadius: 4, backgroundColor: C.green },
+  fillGreen: { height: 6, borderRadius: 3, backgroundColor: C.green },
   breakEven: {
     backgroundColor: C.bg,
     borderRadius: 14,
     padding: 14,
     marginTop: 16,
   },
-  insightRow: { flexDirection: "row", gap: 12, padding: 14 },
-  insightBar: { width: 4, borderRadius: 2 },
-  insightText: { flex: 1, fontSize: 14, lineHeight: 21, color: C.ink },
+  insightRow: { flexDirection: "row", gap: 12, padding: 16 },
+  insightBar: { width: 3, borderRadius: 2 },
+  insightText: { flex: 1, fontSize: 15, lineHeight: 22, color: C.ink },
 
   alertCard: {
     backgroundColor: C.card,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
     marginTop: 12,
-    ...shadow,
   },
   alertRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
-  alertName: { flex: 1, fontSize: 14, color: C.ink, paddingRight: 10 },
-  alertValue: { fontSize: 14, fontWeight: "700", color: "#9A6A00" },
-  restockRow: { flexDirection: "row", gap: 10, alignItems: "center" },
+  alertName: { flex: 1, fontSize: 15, color: C.ink, paddingRight: 10 },
+  alertValue: { fontSize: 15, fontWeight: "600", color: "#C77700" },
+
+  /* Grafik */
+  chartCard: { backgroundColor: C.card, borderRadius: 20, padding: 16 },
+  chartRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    height: 150,
+  },
+  chartCol: { flex: 1, alignItems: "center", justifyContent: "flex-end", gap: 5 },
+  chartValue: { fontSize: 10, color: C.muted, fontWeight: "500" },
+  chartBar: { width: 20, borderRadius: 6, backgroundColor: "#B7DCC4" },
+  chartBarToday: { backgroundColor: C.green },
+  chartBarEmpty: { backgroundColor: C.line },
+  chartLabel: { fontSize: 11, color: C.muted },
+  chartLabelToday: { color: C.green, fontWeight: "700" },
+
+  /* Kartu & daftar */
+  card: {
+    backgroundColor: C.card,
+    padding: 18,
+    borderRadius: 20,
+    marginTop: 14,
+  },
+  listCard: {
+    backgroundColor: C.card,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    gap: 12,
+  },
+  rowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#D1D1D6",
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: C.mint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: C.green, fontWeight: "700", fontSize: 16 },
+  rightCol: { alignItems: "flex-end", gap: 8 },
+
+  productItem: { padding: 14, gap: 12 },
+  productTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  productActions: { flexDirection: "row", gap: 8 },
+  editBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: C.mint,
+    alignItems: "center",
+  },
+  editBtnText: { color: C.greenDark, fontWeight: "600", fontSize: 14 },
+  deleteBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: C.redSoft,
+    alignItems: "center",
+  },
+  deleteBtnText: { color: C.red, fontWeight: "600", fontSize: 14 },
+  deleteText: { color: C.red, fontSize: 13, fontWeight: "500" },
   restockBtn: {
     flex: 1,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 10,
     backgroundColor: C.goldSoft,
     alignItems: "center",
   },
-  restockBtnText: { color: "#7A5300", fontWeight: "700", fontSize: 14 },
+  restockBtnText: { color: "#9A5B00", fontWeight: "600", fontSize: 14 },
+  restockRow: { flexDirection: "row", gap: 10, alignItems: "center" },
   restockSave: {
     backgroundColor: C.green,
     paddingVertical: 14,
@@ -2474,101 +2798,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   recapTotal: {
-    borderTopWidth: 1,
-    borderTopColor: C.line,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#D1D1D6",
     marginTop: 4,
     paddingTop: 12,
   },
 
-  chartCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    padding: 16,
-    ...shadow,
-  },
-  chartRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 150,
-  },
-  chartCol: { flex: 1, alignItems: "center", justifyContent: "flex-end", gap: 5 },
-  chartValue: { fontSize: 10, color: C.muted, fontWeight: "600" },
-  chartBar: {
-    width: 22,
-    borderRadius: 7,
-    backgroundColor: "#8FC0A2",
-  },
-  chartBarToday: { backgroundColor: C.green },
-  chartBarEmpty: { backgroundColor: C.line },
-  chartLabel: { fontSize: 11, color: C.muted },
-  chartLabelToday: { color: C.green, fontWeight: "800" },
-
-  card: {
-    backgroundColor: C.card,
-    padding: 18,
-    borderRadius: 20,
-    marginTop: 14,
-    ...shadow,
-  },
-  listCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
-    overflow: "hidden",
-    ...shadow,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    gap: 12,
-  },
-  rowDivider: { borderBottomWidth: 1, borderBottomColor: C.line },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: C.mint,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: { color: C.green, fontWeight: "800", fontSize: 16 },
-  rightCol: { alignItems: "flex-end", gap: 8 },
-  inlineActions: { flexDirection: "row", gap: 14 },
-  productItem: { padding: 14, gap: 12 },
-  productTop: { flexDirection: "row", alignItems: "center", gap: 12 },
-  productActions: { flexDirection: "row", gap: 10 },
-  editBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: C.mint,
-    alignItems: "center",
-  },
-  editBtnText: { color: C.greenDark, fontWeight: "700", fontSize: 14 },
-  deleteBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: C.redSoft,
-    alignItems: "center",
-  },
-  deleteBtnText: { color: C.red, fontWeight: "700", fontSize: 14 },
-  deleteText: { color: C.red, fontSize: 12, fontWeight: "600" },
-
+  /* Form */
   field: { marginTop: 14 },
   label: { fontSize: 13, color: C.muted, marginBottom: 6, fontWeight: "500" },
   input: {
-    borderWidth: 1.5,
-    borderColor: C.line,
-    backgroundColor: "#FAFCFA",
+    backgroundColor: C.bg,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    fontSize: 16,
+    fontSize: 17,
     color: C.ink,
   },
-  search: { marginBottom: 12, backgroundColor: C.card },
+  search: { marginBottom: 12, backgroundColor: "#E5E5EA" },
   helper: { fontSize: 12, color: C.muted, lineHeight: 18, marginTop: 10 },
 
   preview: {
@@ -2581,42 +2828,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   previewLabel: { fontSize: 13, color: C.muted },
-  previewValue: { fontSize: 15, fontWeight: "800", color: C.green },
+  previewValue: { fontSize: 15, fontWeight: "700", color: C.green },
 
   primary: {
     backgroundColor: C.green,
-    paddingVertical: 16,
+    paddingVertical: 15,
     borderRadius: 14,
     alignItems: "center",
     marginTop: 18,
   },
-  primaryText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  disabledButton: { opacity: 0.55 },
+  primaryText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+  disabledButton: { opacity: 0.5 },
   ghost: { alignItems: "center", paddingVertical: 12, marginTop: 4 },
-  ghostText: { color: C.muted, fontWeight: "600", fontSize: 14 },
+  ghostText: { color: C.muted, fontWeight: "500", fontSize: 15 },
+  laterBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: C.bg,
+    alignItems: "center",
+  },
+  laterText: { color: C.muted, fontWeight: "600", fontSize: 14 },
 
-  itemTitle: { fontWeight: "700", fontSize: 15, color: C.ink },
-  muted: { fontSize: 13, color: C.muted, marginTop: 3 },
-  mutedSmall: { fontSize: 12, color: "#8A988F", marginTop: 2 },
-  amount: { fontSize: 14, fontWeight: "800", color: C.green },
+  itemTitle: { fontWeight: "600", fontSize: 16, color: C.ink },
+  muted: { fontSize: 13, color: C.muted, marginTop: 3, lineHeight: 19 },
+  mutedSmall: { fontSize: 12, color: C.neutral, marginTop: 2 },
+  amount: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: C.ink,
+    fontVariant: ["tabular-nums"],
+  },
 
   emptyCard: {
     backgroundColor: C.card,
     borderRadius: 20,
-    padding: 24,
+    padding: 28,
     alignItems: "center",
-    ...shadow,
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 16,
+    fontWeight: "600",
     color: C.ink,
     textAlign: "center",
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 14,
     color: C.muted,
-    lineHeight: 20,
+    lineHeight: 21,
     textAlign: "center",
     marginTop: 6,
   },
@@ -2624,11 +2883,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.green,
     borderRadius: 12,
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 22,
     marginTop: 16,
   },
-  emptyButtonText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  emptyButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
 
+  /* Pilihan produk (halaman jual) */
   productOption: {
     flexDirection: "row",
     alignItems: "center",
@@ -2636,16 +2896,17 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 16,
     backgroundColor: C.card,
-    marginBottom: 9,
-    ...shadow,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "transparent",
   },
-  productSelected: { borderColor: C.green, backgroundColor: "#F2FAF5" },
+  productSelected: { borderColor: C.green, backgroundColor: "#F4FAF6" },
   radio: {
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: "#C5D0C8",
+    borderColor: "#C7C7CC",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2657,30 +2918,28 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 14,
-    backgroundColor: C.mint,
+    backgroundColor: C.bg,
     alignItems: "center",
     justifyContent: "center",
   },
-  stepText: { fontSize: 24, color: C.greenDark, fontWeight: "700" },
+  stepText: { fontSize: 26, color: C.ink, fontWeight: "500" },
   qtyInput: {
     flex: 1,
     height: 52,
-    borderWidth: 1.5,
-    borderColor: C.line,
     borderRadius: 14,
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "700",
     color: C.ink,
-    backgroundColor: "#FAFCFA",
+    backgroundColor: C.bg,
   },
   quickRow: { flexDirection: "row", gap: 8, marginTop: 10 },
   quickChip: {
-    backgroundColor: C.goldSoft,
+    backgroundColor: C.mint,
     borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  quickText: { color: "#7A5300", fontWeight: "700", fontSize: 13 },
+  quickText: { color: C.greenDark, fontWeight: "600", fontSize: 14 },
 
   summary: {
     backgroundColor: C.bg,
@@ -2695,52 +2954,63 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  /* Chip pilihan */
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catChip: {
     borderRadius: 20,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
     backgroundColor: C.bg,
-    borderWidth: 1.5,
-    borderColor: "transparent",
   },
-  catChipOn: { backgroundColor: C.mint, borderColor: C.green },
-  catText: { color: C.muted, fontSize: 13, fontWeight: "600" },
-  catTextOn: { color: C.greenDark, fontWeight: "800" },
+  catChipOn: { backgroundColor: C.green },
+  catText: { color: C.ink, fontSize: 14, fontWeight: "500" },
+  catTextOn: { color: "#fff", fontWeight: "600" },
 
   breakRow: { marginTop: 14 },
   breakTop: { flexDirection: "row", justifyContent: "space-between" },
-  breakAmount: { fontSize: 13, color: C.ink, fontWeight: "700", marginTop: 3 },
+  breakAmount: { fontSize: 13, color: C.ink, fontWeight: "600", marginTop: 3 },
   track: {
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: C.line,
     marginTop: 6,
     overflow: "hidden",
   },
-  fill: { height: 8, borderRadius: 4, backgroundColor: C.red },
+  fill: { height: 6, borderRadius: 3, backgroundColor: C.red },
 
+  /* Panduan */
+  guideHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    gap: 12,
+  },
+  guideTitle: { flex: 1, fontSize: 16, fontWeight: "600", color: C.ink },
+  guideBody: { paddingHorizontal: 16, paddingBottom: 16, gap: 8 },
+  guideLine: { fontSize: 15, lineHeight: 22, color: C.ink },
+
+  /* Tab bar */
   tabBar: {
     flexDirection: "row",
-    backgroundColor: C.card,
-    paddingBottom: Platform.OS === "ios" ? 10 : 14,
-    borderTopWidth: 1,
-    borderTopColor: C.line,
+    backgroundColor: "rgba(255,255,255,0.97)",
+    paddingTop: 8,
+    paddingBottom: Platform.OS === "ios" ? 6 : 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#C6C6C8",
   },
-  tab: { flex: 1, alignItems: "center", gap: 6, paddingBottom: 4 },
-  tabDot: { width: 40, height: 4, borderRadius: 2, backgroundColor: "transparent" },
-  tabDotOn: { backgroundColor: C.ink },
-  tabLabel: { fontSize: 13, color: C.neutral, fontWeight: "600" },
-  tabLabelOn: { color: C.ink, fontWeight: "800" },
+  tab: { flex: 1, alignItems: "center", gap: 3, paddingBottom: 2 },
+  tabLabel: { fontSize: 12, color: C.neutral, fontWeight: "500" },
+  tabLabelOn: { color: C.green, fontWeight: "600" },
 
   toast: {
     position: "absolute",
     bottom: 104,
     alignSelf: "center",
-    backgroundColor: C.ink,
-    borderRadius: 24,
+    backgroundColor: "#1C1C1E",
+    borderRadius: 22,
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
-  toastText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  toastText: { color: "#fff", fontWeight: "500", fontSize: 14 },
 });

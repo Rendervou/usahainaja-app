@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.alfathi.usahainajaapp"
     },
     "web": {
       "output": "server",
@@ -33,11 +34,24 @@
           "backgroundColor": "#F5F7F5"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "49dc6219-6abb-477e-8a32-ee33b13cf601"
+      }
     }
   }
 }

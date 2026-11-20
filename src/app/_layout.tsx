@@ -93,11 +93,11 @@ function Loading() {
         alignItems: "center",
         justifyContent: "center",
         gap: 12,
-        backgroundColor: "#F3F6F2",
+        backgroundColor: "#F2F2F7",
       }}
     >
       <ActivityIndicator size="large" color="#1E6844" />
-      <Text style={{ color: "#6B7A70" }}>Menyiapkan database...</Text>
+      <Text style={{ color: "#6C6C70" }}>Menyiapkan database...</Text>
     </View>
   );
 }
@@ -113,7 +113,7 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: "#F3F6F2" },
+            contentStyle: { backgroundColor: "#F2F2F7" },
           }}
         />
       </SQLiteProvider>
